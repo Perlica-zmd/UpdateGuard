@@ -22,7 +22,7 @@ Windows 更新 与 Microsoft Store 应用自动更新的管理工具。
 - **不会被 SmartScreen 拦**（未签名的 exe 会被拦）
 - 想改就改：换策略、加任务、塞进部署脚本都行
 
-exe 版放在 **Releases** 页面（仓库里不带二进制），适合不想碰命令行的人。自己编译也就一条命令，见[构建](#构建)。
+exe 版放在 [Releases](https://github.com/Perlica-zmd/UpdateGuard/releases) 页面（仓库里不带二进制），适合不想碰命令行的人。自己编译也就一条命令，见[构建](#构建)。
 
 ---
 
