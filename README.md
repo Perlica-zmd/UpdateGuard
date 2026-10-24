@@ -5,6 +5,8 @@ Manage Windows Update and Microsoft Store app auto-updates on Windows 10 / 11.
 Ships in two forms: **a single PowerShell script (recommended)** and a **standalone GUI executable**
 (Win11 style, zero dependencies).
 
+**English** | [简体中文](README.zh-CN.md)
+
 ![GUI](docs/gui.png)
 
 ---
