@@ -1,0 +1,14 @@
+# 统一按 LF 存进仓库，避免 Windows/Linux 两边换行符来回改动
+* text=auto eol=lf
+
+# 二进制文件不要做换行符转换
+*.png  binary
+*.ico  binary
+*.exe  binary
+*.zip  binary
+*.7z   binary
+*.cer  binary
+
+# PowerShell / 批处理保持 LF 也没问题；这里显式声明为文本即可
+*.ps1  text
+*.bat  text

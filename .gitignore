@@ -1,0 +1,24 @@
+# 构建产物
+dist/
+build/app.ico
+
+# 签名 / 证书产物
+*.cer
+*.pfx
+*.p7b
+*.snk
+
+# 运行时数据（程序自己在 C:\ProgramData 下还有一份，这里防手滑）
+backup/
+acl/
+services.txt
+log.txt
+
+# 编辑器与系统垃圾
+.vs/
+.vscode/
+*.user
+*.suo
+*.bak
+Thumbs.db
+desktop.ini
