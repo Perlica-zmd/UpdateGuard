@@ -47,9 +47,9 @@ Write-Host ('Thumbprint : ' + $cert.Thumbprint)
 Write-Host ('Expires    : ' + $cert.NotAfter)
 
 # ---------------------------------------------------------------- sign
-# 注意: 时间戳服务失败时 Set-AuthenticodeSignature 不会抛异常, 而是返回
-# Status=UnknownError 且不带时间戳。所以必须显式检查, 否则会静默签出一个
-# "没有时间戳"的签名 —— 证书一过期, 签名就失效了。
+# Note: when the timestamp server fails, Set-AuthenticodeSignature does not throw -
+# it returns Status=UnknownError without a timestamp. That has to be checked explicitly,
+# otherwise the build silently produces a signature that expires with the certificate.
 Write-Host 'Signing...' -ForegroundColor Cyan
 $sig = $null
 foreach ($ts in @($Timestamp, 'http://timestamp.sectigo.com')) {

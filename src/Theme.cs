@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -6,7 +6,7 @@ using System.Windows.Forms;
 namespace LiquidWU
 {
     // =====================================================================
-    //  Windows 11 Fluent 主题: 白底 + 浅色描边卡片 + 强调色按钮
+    //  Windows 11 Fluent theme: white background, light-bordered cards, accent buttons
     // =====================================================================
     public static class Theme
     {
@@ -60,7 +60,7 @@ namespace LiquidWU
             return p;
         }
 
-        /// <summary>非常轻的投影, 只用来把卡片从白底上"托起来"一点。</summary>
+        /// <summary>A very soft shadow, just enough to lift a card off the white background.</summary>
         public static void SoftShadow(Graphics g, Rectangle r, float radius)
         {
             for (int i = 3; i >= 1; i--)
@@ -97,7 +97,7 @@ namespace LiquidWU
     public enum WinButtonKind { Accent, Standard }
 
     // =====================================================================
-    //  Win11 风格按钮
+    //  Win11 style button
     // =====================================================================
     public class WinButton : Control
     {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 
 namespace LiquidWU
@@ -50,14 +50,14 @@ namespace LiquidWU
             catch { }
         }
 
-        /// <summary>没有 DWM 圆角时的兜底: 用窗口区域切圆角。</summary>
+        /// <summary>Fallback when DWM rounding is unavailable: clip the window with a region.</summary>
         public static void RoundRegion(IntPtr hwnd, int w, int h, int radius)
         {
             try
             {
                 IntPtr rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, radius, radius);
                 SetWindowRgn(hwnd, rgn, true);
-                // 区域的所有权交给系统, 不 DeleteObject
+                // The region is owned by the system from here on; do not delete it.
             }
             catch { }
         }
