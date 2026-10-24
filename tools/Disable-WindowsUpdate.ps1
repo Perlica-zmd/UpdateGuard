@@ -1,21 +1,7 @@
 ﻿#requires -Version 5.1
 <#
   更新守卫 · Update Guard — PowerShell 版
-  禁用 / 恢复 Windows 更新 + 关闭 Microsoft Store 应用自动更新
   作者: Perlica   License: MIT
-
-  思路: 真正长期有效的是"策略"(更新源指向不存在的内网 WSUS + 禁止连微软更新服务器),
-        服务启动类型和计划任务只是辅助层 —— Windows 会主动把它们改回去。
-
-  用法:
-    A. 右键 -> 使用 PowerShell 运行 (会自己请求管理员)
-    B. powershell -NoProfile -ExecutionPolicy Bypass -File "本文件路径"
-    C. 非交互: -Auto disable | restore | status | repair  [-Detail]
-
-  数据目录 (与 exe 版共用): C:\ProgramData\UpdateGuard\
-    log.txt / services.txt / tasks\*.xml / acl\*.sddl
-
-  注意: 本文件必须保持 UTF-8 with BOM, 否则 PowerShell 5.1 会按 ANSI 读, 中文变乱码。
 #>
 
 [CmdletBinding()]
