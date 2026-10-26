@@ -171,8 +171,12 @@ function Get-ServiceStartText([int]$Type) {
 
 function Set-ServiceStartType([string]$Name, [string]$Mode) {
     # $Mode: disabled / demand / auto / delayed-auto
-    $null = & sc.exe config $Name start= $Mode 2>&1
-    return ($LASTEXITCODE -eq 0)
+    $output = & sc.exe config $Name start= $Mode 2>&1
+    if ($LASTEXITCODE -eq 0) { return $true }
+    # Keep the real reason: "access denied" and "service is protected" need different fixes.
+    $script:LastScError = ('sc config {0} start= {1} -> exit {2}: {3}' -f `
+                           $Name, $Mode, $LASTEXITCODE, (($output -join ' ').Trim()))
+    return $false
 }
 
 function Stop-SingleService([string]$Name, [int]$TimeoutSeconds = 8) {
@@ -569,23 +573,33 @@ function Invoke-Disable {
     }
 
     Update-Bar 62 'Setting service start types'
+    $unchangeable = @()
     foreach ($name in $script:Services) {
-        if (Set-ServiceStartType $name 'disabled') { Write-Log ('  {0}: disabled' -f $name) 'Ok' }
-        else                                       { Write-Log ('  {0}: could not be changed' -f $name) 'Warn' }
+        if (Set-ServiceStartType $name 'disabled') {
+            Write-Log ('  {0}: disabled' -f $name) 'Ok'
+        } else {
+            $unchangeable += $name
+            Write-Log ('  {0}: could not be changed - {1}' -f $name, $script:LastScError) 'Warn'
+        }
     }
 
     # Watch for a while: the servicing stack may revert the start types immediately.
+    # Services that refused the very first change are not retried, otherwise the same
+    # failure is reported ten times in a row.
     $reverts = 0
     for ($step = 1; $step -le 10; $step++) {
         Update-Bar (66 + $step) ("Verifying {0}/30 s" -f ($step * 3))
         Start-Sleep -Seconds 3
 
-        $reverted = @(Get-NonDisabledServices)
+        $reverted = @(Get-NonDisabledServices | Where-Object { $unchangeable -notcontains ($_ -split ' ')[0] })
         if ($reverted.Count -eq 0) { continue }
 
         $reverts++
         Write-Log ('  Reverted after {0} s: {1} (attempt {2})' -f ($step * 3), ($reverted -join ', '), $reverts) 'Warn'
-        foreach ($name in $script:Services) { $null = Set-ServiceStartType $name 'disabled' }
+        foreach ($name in $script:Services) {
+            if ($unchangeable -contains $name) { continue }
+            $null = Set-ServiceStartType $name 'disabled'
+        }
     }
     if ($reverts -eq 0) { Write-Log '  Nothing changed back within 30 s' 'Ok' }
 
