@@ -131,6 +131,24 @@ function Complete-Bar {
     $script:BarWidth = 0
 }
 
+# Run an external tool with a hard timeout. Returns the exit code, or -1 on timeout.
+# Nothing in this script is allowed to block forever.
+function Invoke-Process([string]$FilePath, [string]$Arguments, [int]$TimeoutMs = 20000) {
+    try {
+        $info = New-Object System.Diagnostics.ProcessStartInfo
+        $info.FileName = $FilePath
+        $info.Arguments = $Arguments
+        $info.UseShellExecute = $false
+        $info.CreateNoWindow = $true
+        $process = [System.Diagnostics.Process]::Start($info)
+        if (-not $process.WaitForExit($TimeoutMs)) {
+            try { $process.Kill() } catch { }
+            return -1
+        }
+        return $process.ExitCode
+    } catch { return -1 }
+}
+
 # ------------------------------------------------------------------ services
 # Read from the Service Control Manager, which keeps its own copy of the configuration.
 function Get-ServiceStartType([string]$Name) {
@@ -286,23 +304,13 @@ function Get-UpdateTasks {
                 FilePath = $file.FullName
                 TaskPath = $taskPath
                 TaskName = $taskName
-                Enabled  = (Get-TaskEnabledState $taskPath $taskName $file.FullName)
+                # Read from the file on disk: fast, and it cannot block the way the cmdlet can.
+                # A stale value only costs a redundant call later, it never breaks correctness.
+                Enabled  = (Read-TaskEnabled $file.FullName)
             }
         }
     }
     return $tasks
-}
-
-# Ask the Task Scheduler first (authoritative) and fall back to the XML file.
-function Get-TaskEnabledState([string]$TaskPath, [string]$TaskName, [string]$FilePath) {
-    try {
-        $task = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop
-        if ($null -ne $task) {
-            if ($task.State -eq 'Disabled') { return $false }
-            if ($task.State -eq 'Ready' -or $task.State -eq 'Running') { return $true }
-        }
-    } catch { }
-    return (Read-TaskEnabled $FilePath)
 }
 
 function Read-TaskEnabled([string]$FilePath) {
@@ -391,15 +399,19 @@ function Restore-TaskFromBackup([string]$TaskPath, [string]$TaskName) {
     } catch { return $false }
 }
 
+# Stop and start the Schedule service through sc.exe. Restart-Service waits on the
+# service state indefinitely, which is how the restore used to hang at 40%.
+function Restart-ScheduleService {
+    $null = Invoke-Process 'sc.exe' 'stop Schedule' 25000
+    Start-Sleep -Seconds 2
+    return ((Invoke-Process 'sc.exe' 'start Schedule' 25000) -eq 0)
+}
+
 # Reload the Task Scheduler so the XML edits take effect immediately.
 function Restart-TaskScheduler {
-    try {
-        Restart-Service -Name Schedule -Force -ErrorAction Stop
-        Start-Sleep -Seconds 2
+    if (Restart-ScheduleService) {
         Write-Log 'Task Scheduler reloaded' 'Ok'
         return $true
-    } catch {
-        Write-Log ('Restarting the Task Scheduler failed: ' + $_.Exception.Message) 'Warn'
     }
 
     # Administrators hold WRITE_DAC but not SERVICE_STOP, so grant it temporarily.
@@ -414,11 +426,8 @@ function Restart-TaskScheduler {
 
     $succeeded = $false
     try {
-        Restart-Service -Name Schedule -Force -ErrorAction Stop
-        Start-Sleep -Seconds 2
-        $succeeded = $true
-    } catch {
-        Write-Log ('Restart still failed after granting the right: ' + $_.Exception.Message) 'Warn'
+        $succeeded = Restart-ScheduleService
+        if (-not $succeeded) { Write-Log 'Restart still failed after granting the right' 'Warn' }
     } finally {
         $null = & sc.exe sdset Schedule $original 2>&1
         Write-Log 'Schedule service SDDL restored' 'Ok'
@@ -522,8 +531,9 @@ function Invoke-Disable {
         if (-not $task.Enabled) { $succeeded++; continue }
 
         $done = $false
-        $null = & schtasks.exe /change /tn ("`"{0}{1}`"" -f $task.TaskPath, $task.TaskName) /disable 2>&1
-        if ($LASTEXITCODE -eq 0) { $done = $true }
+        if ((Invoke-Process 'schtasks.exe' ("/change /tn `"{0}{1}`" /disable" -f $task.TaskPath, $task.TaskName)) -eq 0) {
+            $done = $true
+        }
         if (-not $done -and (Set-TaskXmlEnabled $task.TaskPath $task.TaskName $false)) {
             $edited++
             $done = $true
@@ -626,8 +636,9 @@ function Invoke-Restore {
         if ($task.Enabled) { $succeeded++; continue }
 
         $done = $false
-        $null = & schtasks.exe /change /tn ("`"{0}{1}`"" -f $task.TaskPath, $task.TaskName) /enable 2>&1
-        if ($LASTEXITCODE -eq 0) { $done = $true }
+        if ((Invoke-Process 'schtasks.exe' ("/change /tn `"{0}{1}`" /enable" -f $task.TaskPath, $task.TaskName)) -eq 0) {
+            $done = $true
+        }
         if (-not $done -and (Restore-TaskFromBackup $task.TaskPath $task.TaskName)) {
             $fromBackup++
             $done = $true
@@ -641,7 +652,7 @@ function Invoke-Restore {
     if ($changed) { $null = Restart-TaskScheduler }
 
     Update-Bar 90 'Refreshing policy'
-    $null = & gpupdate.exe /force 2>&1
+    $null = Invoke-Process 'gpupdate.exe' '/force' 120000
     Write-Log 'gpupdate /force completed' 'Ok'
 
     Update-Bar 100 'Done'
