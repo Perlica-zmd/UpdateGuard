@@ -322,9 +322,8 @@ function Get-UpdateTasks {
                 FilePath = $file.FullName
                 TaskPath = $taskPath
                 TaskName = $taskName
-                # Read from the file on disk: fast, and it cannot block the way the cmdlet can.
-                # A stale value only costs a redundant call later, it never breaks correctness.
-                Enabled  = (Read-TaskEnabled $file.FullName)
+                # File first, Task Scheduler as a fallback; $null means "could not tell".
+                Enabled  = (Get-TaskEnabledState $taskPath $taskName $file.FullName)
             }
         }
     }
@@ -346,7 +345,21 @@ function Read-TaskEnabled([string]$FilePath) {
         $enabled = $settings.SelectSingleNode('t:Enabled', $namespaces)
         if (-not $enabled) { return $true }
         return ($enabled.InnerText.Trim() -ne 'false')
-    } catch { return $true }
+    } catch { return $null }        # unreadable: unknown, not "enabled"
+}
+
+# Ask the file first (fast), fall back to the Task Scheduler when the file cannot be read.
+# Returns $null when neither source answers, so the caller never reports a made-up value.
+function Get-TaskEnabledState([string]$TaskPath, [string]$TaskName, [string]$FilePath) {
+    $fromFile = Read-TaskEnabled $FilePath
+    if ($null -ne $fromFile) { return $fromFile }
+
+    try {
+        $task = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop
+        if ($task.State -eq 'Disabled') { return $false }
+        if ($task.State -eq 'Ready' -or $task.State -eq 'Running') { return $true }
+    } catch { }
+    return $null
 }
 
 function Get-TaskBackupName([string]$TaskPath, [string]$TaskName) {
@@ -546,7 +559,7 @@ function Invoke-Disable {
         if ($tasks.Count -gt 0) {
             Update-Bar (30 + [int](25.0 * $index / $tasks.Count)) ("Disabling tasks {0}/{1}" -f $index, $tasks.Count)
         }
-        if (-not $task.Enabled) { $succeeded++; continue }
+        if ($task.Enabled -eq $false) { $succeeded++; continue }
 
         $done = $false
         if ((Invoke-Process 'schtasks.exe' ("/change /tn `"{0}{1}`" /disable" -f $task.TaskPath, $task.TaskName)) -eq 0) {
@@ -661,7 +674,7 @@ function Invoke-Restore {
         if ($tasks.Count -gt 0) {
             Update-Bar (40 + [int](45.0 * $index / $tasks.Count)) ("Restoring tasks {0}/{1}" -f $index, $tasks.Count)
         }
-        if ($task.Enabled) { $succeeded++; continue }
+        if ($task.Enabled -eq $true) { $succeeded++; continue }
 
         $done = $false
         if ((Invoke-Process 'schtasks.exe' ("/change /tn `"{0}{1}`" /enable" -f $task.TaskPath, $task.TaskName)) -eq 0) {
@@ -725,8 +738,9 @@ function Show-Status {
 
     Write-Host '--- Scheduled tasks ---' -ForegroundColor Cyan
     foreach ($task in @(Get-UpdateTasks)) {
-        $state = if ($task.Enabled) { 'enabled ' } else { 'disabled' }
-        $color = if ($task.Enabled) { 'Yellow' } else { 'Green' }
+        if ($null -eq $task.Enabled)      { $state = 'unknown '; $color = 'DarkGray' }
+        elseif ($task.Enabled)            { $state = 'enabled '; $color = 'Yellow' }
+        else                              { $state = 'disabled'; $color = 'Green' }
         Write-Host ('  [{0}] {1}{2}' -f $state, $task.TaskPath, $task.TaskName) -ForegroundColor $color
     }
 
