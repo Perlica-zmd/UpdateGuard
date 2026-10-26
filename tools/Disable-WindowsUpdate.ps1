@@ -175,7 +175,7 @@ function Set-ServiceStartType([string]$Name, [string]$Mode) {
     return ($LASTEXITCODE -eq 0)
 }
 
-function Stop-SingleService([string]$Name, [int]$TimeoutSeconds = 20) {
+function Stop-SingleService([string]$Name, [int]$TimeoutSeconds = 8) {
     $null = & sc.exe stop $Name 2>&1
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
@@ -187,7 +187,7 @@ function Stop-SingleService([string]$Name, [int]$TimeoutSeconds = 20) {
     return $false
 }
 
-function Stop-AllServices([int]$Rounds = 3) {
+function Stop-AllServices([int]$Rounds = 2, [int]$FromPercent = -1, [int]$ToPercent = -1) {
     for ($round = 1; $round -le $Rounds; $round++) {
         $running = @()
         foreach ($name in $script:StopOrder) {
@@ -199,16 +199,30 @@ function Stop-AllServices([int]$Rounds = 3) {
             return
         }
         Write-Log ('Stopping (round {0}): {1}' -f $round, ($running -join ', '))
+
+        $index = 0
         foreach ($name in $running) {
-            if (Stop-SingleService $name) { Write-Log ('  {0}: stopped' -f $name) 'Ok' }
-            else                          { Write-Log ('  {0}: could not be stopped' -f $name) 'Warn' }
+            $index++
+            # Keep the progress bar moving: without this the stop phase looks frozen.
+            if ($FromPercent -ge 0 -and $ToPercent -gt $FromPercent) {
+                $portion = (($round - 1) + $index / [double]($running.Count + 1)) / $Rounds
+                Update-Bar ($FromPercent + [int](($ToPercent - $FromPercent) * $portion)) ("Stopping {0}" -f $name)
+            }
+
+            if (Stop-SingleService $name) {
+                Write-Log ('  {0}: stopped' -f $name) 'Ok'
+            } else {
+                Write-Log ('  {0}: could not be stopped, it will stay down after a reboot' -f $name) 'Warn'
+            }
         }
+
         if ($round -eq 1) {
             Start-Sleep -Seconds 1
             Stop-UpdateProcesses
         }
-        Start-Sleep -Seconds 2
+        Start-Sleep -Seconds 1
     }
+    Write-Log 'Some services are still running; they are disabled and will not start after a reboot' 'Warn'
 }
 
 function Stop-UpdateProcesses {
@@ -515,7 +529,7 @@ function Invoke-Disable {
     Set-StorePolicy $true
 
     Update-Bar 26 'Stopping services'
-    Stop-AllServices 3
+    Stop-AllServices 2 26 34
     Stop-UpdateProcesses
     Start-Sleep -Seconds 1
 
@@ -576,7 +590,7 @@ function Invoke-Disable {
     if ($reverts -eq 0) { Write-Log '  Nothing changed back within 30 s' 'Ok' }
 
     Update-Bar 90 'Finishing'
-    Stop-AllServices 2
+    Stop-AllServices 1 88 90
     Stop-UpdateProcesses
     Start-Sleep -Seconds 2
 
