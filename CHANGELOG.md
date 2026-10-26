@@ -11,7 +11,7 @@ Initial release.
   `DoNotConnectToWindowsUpdateInternetLocations` = 1, `NoAutoUpdate` = 1, `UseWUServer` = 1).
   This is a configuration the servicing stack honours, unlike a modified service start type.
 - Turns off Microsoft Store app auto-updates (`WindowsStore\AutoDownload` = 2).
-- Sets `wuauserv`, `usosvc`, `dosvc`, `WaaSMedicSvc` and `bits` to Disabled and stops them.
+- Sets `wuauserv`, `usosvc`, `WaaSMedicSvc` and `bits` to Disabled and stops them.
 - Disables every task under `UpdateOrchestrator`, `WaaSMedic`, `WindowsUpdate` and `InstallService`.
   Protected tasks are edited at the XML level and the Task Scheduler is reloaded afterwards.
 

@@ -32,8 +32,10 @@ if ((-not $isElevated) -and $needsElevation) {
 }
 
 # ------------------------------------------------------------------ constants
-$script:Services  = @('wuauserv', 'usosvc', 'dosvc', 'WaaSMedicSvc', 'bits')
-$script:StopOrder = @('usosvc', 'WaaSMedicSvc', 'wuauserv', 'dosvc', 'bits')
+# dosvc (Delivery Optimization) is deliberately not managed: the SCM refuses to change its
+# start type (ChangeServiceConfig -> access denied) and it plays no part in policy blocking.
+$script:Services  = @('wuauserv', 'usosvc', 'WaaSMedicSvc', 'bits')
+$script:StopOrder = @('usosvc', 'WaaSMedicSvc', 'wuauserv', 'bits')
 $script:Processes = @('MoUsoCoreWorker', 'TiWorker', 'wuauclt', 'usoclient')
 
 $script:TaskFolders = @(
@@ -590,9 +592,14 @@ function Invoke-Disable {
 
     Update-Bar 62 'Setting service start types'
     $unchangeable = @()
+    $protected = @()
     foreach ($name in $script:Services) {
         if (Set-ServiceStartType $name 'disabled') {
             Write-Log ('  {0}: disabled' -f $name) 'Ok'
+        } elseif ($script:LastScError -match 'exit 5|Access is denied') {
+            # Windows protects a few services at the SCM level; nothing to fix there.
+            $protected += $name
+            Write-Log ('  {0}: protected by Windows, skipped' -f $name) 'Warn'
         } else {
             $unchangeable += $name
             Write-Log ('  {0}: could not be changed - {1}' -f $name, $script:LastScError) 'Warn'
@@ -624,12 +631,12 @@ function Invoke-Disable {
     Stop-UpdateProcesses
     Start-Sleep -Seconds 2
 
-    $remaining = @(Get-NonDisabledServices)
+    $remaining = @(Get-NonDisabledServices | Where-Object { $protected -notcontains ($_ -split ' ')[0] })
     Update-Bar 100 'Done'
     Write-Log ''
     if ($remaining.Count -eq 0) {
         Write-Log '==================== Done ====================' 'Ok'
-        Write-Log '  All five services are disabled and the update source is unreachable' 'Ok'
+        Write-Log '  All managed services are disabled and the update source is unreachable' 'Ok'
     } else {
         Write-Log '==================== Partially done ====================' 'Warn'
         Write-Log ('  Still enabled: {0}' -f ($remaining -join ', ')) 'Err'

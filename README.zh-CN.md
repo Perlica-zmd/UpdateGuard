@@ -43,7 +43,7 @@ GUI 版挂在 [Releases](../../releases)，仓库里不放二进制。
 | `HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate` | `WUServer` / `WUStatusServer` = `http://127.0.0.1:8530`（一个不存在的地址），`DoNotConnectToWindowsUpdateInternetLocations` = 1 |
 | `...\WindowsUpdate\AU` | `NoAutoUpdate` = 1，`UseWUServer` = 1 |
 | `HKLM\SOFTWARE\Policies\Microsoft\WindowsStore` | `AutoDownload` = 2（关闭 Store 应用自动更新） |
-| 服务 | `wuauserv`、`usosvc`、`dosvc`、`WaaSMedicSvc`、`bits` → 设为禁用并停止 |
+| 服务 | `wuauserv`、`usosvc`、`WaaSMedicSvc`、`bits` → 设为禁用并停止 |
 | 计划任务 | `\Microsoft\Windows\{UpdateOrchestrator, WaaSMedic, WindowsUpdate, InstallService}\` 下全部禁用 |
 
 受保护的任务会拒绝任务计划程序的 API，所以改为直接改写任务 XML（只动 `Settings/Enabled`），
@@ -55,7 +55,7 @@ GUI 版挂在 [Releases](../../releases)，仓库里不放二进制。
 
 ## 功能
 
-- 禁用 / 恢复 Windows 更新（策略 + 5 个服务 + 4 个目录下的全部任务）
+- 禁用 / 恢复 Windows 更新（策略 + 4 个服务 + 4 个目录下的全部任务）
 - 开关 Microsoft Store 应用自动更新
 - 实时状态：服务启动类型直接问 SCM（`sc qc`），注册表键被锁也不会读错
 - 进度条；逐行过程默认折叠，出错才自动展开（`-Detail` 可强制展开）

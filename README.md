@@ -44,7 +44,7 @@ Both share the same data directory, so you can switch between them at any time.
 | `HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate` | `WUServer` / `WUStatusServer` = `http://127.0.0.1:8530` (a server that does not exist), `DoNotConnectToWindowsUpdateInternetLocations` = 1 |
 | `...\WindowsUpdate\AU` | `NoAutoUpdate` = 1, `UseWUServer` = 1 |
 | `HKLM\SOFTWARE\Policies\Microsoft\WindowsStore` | `AutoDownload` = 2 (disables Store app auto-update) |
-| Services | `wuauserv`, `usosvc`, `dosvc`, `WaaSMedicSvc`, `bits` → set to Disabled and stopped |
+| Services | `wuauserv`, `usosvc`, `WaaSMedicSvc`, `bits` → set to Disabled and stopped |
 | Scheduled tasks | everything under `\Microsoft\Windows\{UpdateOrchestrator, WaaSMedic, WindowsUpdate, InstallService}\` → disabled |
 
 Protected tasks reject the Task Scheduler API, so their XML is edited directly
@@ -58,8 +58,9 @@ restore the backed-up task XML, then run `gpupdate /force`.
 
 ## Features
 
-- Disable / restore Windows Update (policies + 5 services + all tasks in 4 folders)
+- Disable / restore Windows Update (policies + 4 services + all tasks in 4 folders)
 - Toggle Microsoft Store app auto-updates
+- `dosvc` (Delivery Optimization) is intentionally left alone: the SCM refuses to change its start type, and it plays no part in policy blocking
 - Live status view — service start types are read from the Service Control Manager (`sc qc`),
   so a locked-down registry key cannot produce a false reading
 - Progress bar with the per-step log collapsed by default; it expands automatically on failure
