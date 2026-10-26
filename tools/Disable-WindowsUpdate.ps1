@@ -368,6 +368,9 @@ function Get-TaskBackupName([string]$TaskPath, [string]$TaskName) {
 
 function Grant-AdministratorsFullControl([string]$FilePath) {
     $null = & takeown.exe /F $FilePath /A 2>&1
+    # Reset to inherited permissions first. An older build left Deny-write ACEs on some
+    # task files, so schtasks reported success while silently failing to persist.
+    $null = & icacls.exe $FilePath /reset 2>&1
     $null = & icacls.exe $FilePath /grant '*S-1-5-32-544:(F)' 2>&1
 }
 
