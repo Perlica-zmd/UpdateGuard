@@ -155,23 +155,36 @@ function Invoke-Process([string]$FilePath, [string]$Arguments, [int]$TimeoutMs =
 # Read from the Service Control Manager, which keeps its own copy of the configuration.
 # Same as Invoke-Process but also captures stdout. sc.exe blocks on a busy SCM, and the
 # verify loop used to sit in that call for minutes with nothing on screen.
+#
+# Uses System.Diagnostics.Process directly: Start-Process -PassThru reports a null
+# ExitCode when stdout is redirected, which made every successful call look like a failure.
 function Invoke-Capture([string]$FilePath, [string]$Arguments, [int]$TimeoutMs = 8000) {
-    $out = [System.IO.Path]::GetTempFileName()
-    $err = [System.IO.Path]::GetTempFileName()
     try {
-        $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -NoNewWindow -PassThru `
-                       -RedirectStandardOutput $out -RedirectStandardError $err
+        $info = New-Object System.Diagnostics.ProcessStartInfo
+        $info.FileName = $FilePath
+        $info.Arguments = $Arguments
+        $info.UseShellExecute = $false
+        $info.CreateNoWindow = $true
+        $info.RedirectStandardOutput = $true
+        $info.RedirectStandardError = $true
+
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $info
+        $null = $process.Start()
+        # Read asynchronously so a full pipe buffer can never deadlock the wait.
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+
         if (-not $process.WaitForExit($TimeoutMs)) {
             try { $process.Kill() } catch { }
             return [pscustomobject]@{ ExitCode = -1; Text = '' }
         }
+
         $text = ''
-        try { $text = [string](Get-Content -LiteralPath $out -Raw -ErrorAction SilentlyContinue) } catch { }
+        try { $text = [string]$stdout.Result } catch { }
         return [pscustomobject]@{ ExitCode = $process.ExitCode; Text = $text }
     } catch {
         return [pscustomobject]@{ ExitCode = -1; Text = '' }
-    } finally {
-        Remove-Item -LiteralPath $out, $err -Force -ErrorAction SilentlyContinue
     }
 }
 
