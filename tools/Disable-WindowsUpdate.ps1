@@ -233,8 +233,8 @@ function Stop-AllServices([int]$Rounds = 2, [int]$FromPercent = -1, [int]$ToPerc
     for ($round = 1; $round -le $Rounds; $round++) {
         $running = @()
         foreach ($name in $script:StopOrder) {
-            $query = & sc.exe query $name 2>&1
-            if ($LASTEXITCODE -eq 0 -and -not (($query -join ' ') -match 'STOPPED')) { $running += $name }
+            $q = Invoke-Capture 'sc.exe' "query $name" 5000
+            if ($q.ExitCode -eq 0 -and $q.Text -notmatch 'STOPPED') { $running += $name }
         }
         if ($running.Count -eq 0) {
             Write-Log 'All update related services are stopped' 'Ok'
@@ -244,15 +244,15 @@ function Stop-AllServices([int]$Rounds = 2, [int]$FromPercent = -1, [int]$ToPerc
 
         # Send every stop request first, then wait once for the whole group.
         # Waiting per service cost 8 s each, so a busy wuauserv alone stalled the run.
-        foreach ($name in $running) { $null = & sc.exe stop $name 2>&1 }
+        foreach ($name in $running) { $null = Invoke-Process 'sc.exe' "stop $name" 8000 }
 
         $deadline = (Get-Date).AddSeconds(12)
         $pending = $running
         while ((Get-Date) -lt $deadline -and $pending.Count -gt 0) {
             Start-Sleep -Milliseconds 600
             $pending = @($pending | Where-Object {
-                $q = & sc.exe query $_ 2>&1
-                $LASTEXITCODE -eq 0 -and -not (($q -join ' ') -match 'STOPPED')
+                $q = Invoke-Capture 'sc.exe' "query $_" 5000
+                $q.ExitCode -eq 0 -and $q.Text -notmatch 'STOPPED'
             })
             if ($FromPercent -ge 0 -and $ToPercent -gt $FromPercent) {
                 $portion = (($round - 1) + ($running.Count - $pending.Count) / [double]($running.Count + 1)) / $Rounds
