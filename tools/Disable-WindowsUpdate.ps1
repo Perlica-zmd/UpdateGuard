@@ -153,12 +153,32 @@ function Invoke-Process([string]$FilePath, [string]$Arguments, [int]$TimeoutMs =
 
 # ------------------------------------------------------------------ services
 # Read from the Service Control Manager, which keeps its own copy of the configuration.
-function Get-ServiceStartType([string]$Name) {
-    $output = & sc.exe qc $Name 2>&1
-    if ($LASTEXITCODE -ne 0) { return -1 }
-    foreach ($line in $output) {
-        if ($line -match 'START_TYPE\s*:\s*(\d)') { return [int]$Matches[1] }
+# Same as Invoke-Process but also captures stdout. sc.exe blocks on a busy SCM, and the
+# verify loop used to sit in that call for minutes with nothing on screen.
+function Invoke-Capture([string]$FilePath, [string]$Arguments, [int]$TimeoutMs = 8000) {
+    $out = [System.IO.Path]::GetTempFileName()
+    $err = [System.IO.Path]::GetTempFileName()
+    try {
+        $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -NoNewWindow -PassThru `
+                       -RedirectStandardOutput $out -RedirectStandardError $err
+        if (-not $process.WaitForExit($TimeoutMs)) {
+            try { $process.Kill() } catch { }
+            return [pscustomobject]@{ ExitCode = -1; Text = '' }
+        }
+        $text = ''
+        try { $text = [string](Get-Content -LiteralPath $out -Raw -ErrorAction SilentlyContinue) } catch { }
+        return [pscustomobject]@{ ExitCode = $process.ExitCode; Text = $text }
+    } catch {
+        return [pscustomobject]@{ ExitCode = -1; Text = '' }
+    } finally {
+        Remove-Item -LiteralPath $out, $err -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Get-ServiceStartType([string]$Name) {
+    $result = Invoke-Capture 'sc.exe' "qc $Name" 8000
+    if ($result.ExitCode -ne 0) { return -1 }
+    if ($result.Text -match 'START_TYPE\s*:\s*(\d)') { return [int]$Matches[1] }
     return -1
 }
 
@@ -173,11 +193,10 @@ function Get-ServiceStartText([int]$Type) {
 
 function Set-ServiceStartType([string]$Name, [string]$Mode) {
     # $Mode: disabled / demand / auto / delayed-auto
-    $output = & sc.exe config $Name start= $Mode 2>&1
-    if ($LASTEXITCODE -eq 0) { return $true }
-    # Keep the real reason: "access denied" and "service is protected" need different fixes.
-    $script:LastScError = ('sc config {0} start= {1} -> exit {2}: {3}' -f `
-                           $Name, $Mode, $LASTEXITCODE, (($output -join ' ').Trim()))
+    $result = Invoke-Capture 'sc.exe' "config $Name start= $Mode" 10000
+    if ($result.ExitCode -eq 0) { return $true }
+    $detail = ($result.Text -replace '\s+', ' ').Trim()
+    $script:LastScError = ('sc config {0} start= {1} -> exit {2}: {3}' -f $Name, $Mode, $result.ExitCode, $detail)
     return $false
 }
 
@@ -272,6 +291,9 @@ function Get-NonDisabledServices {
     $result = @()
     foreach ($name in $script:Services) {
         $type = Get-ServiceStartType $name
+        # -1 means "could not ask the SCM in time"; an unknown state must not be counted
+        # as a revert, otherwise every timeout triggers another round of retries.
+        if ($type -eq -1) { continue }
         if ($type -ne 4) { $result += ('{0} ({1})' -f $name, (Get-ServiceStartText $type)) }
     }
     return $result
@@ -640,8 +662,8 @@ function Invoke-Disable {
     # Services that refused the very first change are not retried, otherwise the same
     # failure is reported ten times in a row.
     $reverts = 0
-    for ($step = 1; $step -le 10; $step++) {
-        Update-Bar (66 + $step) ("Verifying {0}/30 s" -f ($step * 3))
+    for ($step = 1; $step -le 4; $step++) {
+        Update-Bar (66 + $step * 2) ("Verifying {0}/12 s" -f ($step * 3))
         Start-Sleep -Seconds 3
 
         $reverted = @(Get-NonDisabledServices | Where-Object { $unchangeable -notcontains ($_ -split ' ')[0] })
