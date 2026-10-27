@@ -194,17 +194,19 @@ function Clear-PendingUpdateState {
         Write-Log ('  could not clear the pending restart flag: ' + $_.Exception.Message) 'Warn'
     }
 
+    # Deleting ~1 GB with Remove-Item -Recurse takes minutes: every locked file is retried.
+    # rd /s /q is a single native pass and the timeout keeps it bounded.
     $download = Join-Path $env:SystemRoot 'SoftwareDistribution\Download'
-    try {
-        if (Test-Path -LiteralPath $download) {
-            $bytes = (Get-ChildItem -LiteralPath $download -Recurse -Force -ErrorAction SilentlyContinue |
-                        Measure-Object -Property Length -Sum).Sum
-            Get-ChildItem -LiteralPath $download -Force -ErrorAction SilentlyContinue |
-                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Log ('  downloaded update payload removed ({0:N0} MB)' -f ([double]$bytes / 1MB)) 'Ok'
+    if (Test-Path -LiteralPath $download) {
+        $code = Invoke-Process 'cmd.exe' ('/c rd /s /q "{0}"' -f $download) 60000
+        if ($code -eq 0) {
+            Write-Log '  downloaded update payload removed' 'Ok'
+        } else {
+            Write-Log ('  partially cleared (exit {0}); the leftovers are harmless' -f $code) 'Warn'
         }
-    } catch {
-        Write-Log ('  could not clear downloaded updates: ' + $_.Exception.Message) 'Warn'
+        if (-not (Test-Path -LiteralPath $download)) {
+            $null = New-Item -ItemType Directory -Path $download -Force
+        }
     }
 }
 
