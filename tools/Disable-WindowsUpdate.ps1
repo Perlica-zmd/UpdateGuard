@@ -181,18 +181,6 @@ function Set-ServiceStartType([string]$Name, [string]$Mode) {
     return $false
 }
 
-function Stop-SingleService([string]$Name, [int]$TimeoutSeconds = 8) {
-    $null = & sc.exe stop $Name 2>&1
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    while ((Get-Date) -lt $deadline) {
-        Start-Sleep -Milliseconds 500
-        $query = & sc.exe query $Name 2>&1
-        if ($LASTEXITCODE -ne 0) { return $true }                    # service does not exist
-        if (($query -join ' ') -match 'STOPPED') { return $true }
-    }
-    return $false
-}
-
 function Stop-AllServices([int]$Rounds = 2, [int]$FromPercent = -1, [int]$ToPercent = -1) {
     for ($round = 1; $round -le $Rounds; $round++) {
         $running = @()
@@ -206,27 +194,37 @@ function Stop-AllServices([int]$Rounds = 2, [int]$FromPercent = -1, [int]$ToPerc
         }
         Write-Log ('Stopping (round {0}): {1}' -f $round, ($running -join ', '))
 
-        $index = 0
-        foreach ($name in $running) {
-            $index++
-            # Keep the progress bar moving: without this the stop phase looks frozen.
+        # Send every stop request first, then wait once for the whole group.
+        # Waiting per service cost 8 s each, so a busy wuauserv alone stalled the run.
+        foreach ($name in $running) { $null = & sc.exe stop $name 2>&1 }
+
+        $deadline = (Get-Date).AddSeconds(12)
+        $pending = $running
+        while ((Get-Date) -lt $deadline -and $pending.Count -gt 0) {
+            Start-Sleep -Milliseconds 600
+            $pending = @($pending | Where-Object {
+                $q = & sc.exe query $_ 2>&1
+                $LASTEXITCODE -eq 0 -and -not (($q -join ' ') -match 'STOPPED')
+            })
             if ($FromPercent -ge 0 -and $ToPercent -gt $FromPercent) {
-                $portion = (($round - 1) + $index / [double]($running.Count + 1)) / $Rounds
-                Update-Bar ($FromPercent + [int](($ToPercent - $FromPercent) * $portion)) ("Stopping {0}" -f $name)
+                $portion = (($round - 1) + ($running.Count - $pending.Count) / [double]($running.Count + 1)) / $Rounds
+                $label = if ($pending.Count -gt 0) { $pending[0] } else { 'services' }
+                Update-Bar ($FromPercent + [int](($ToPercent - $FromPercent) * $portion)) ("Stopping {0}" -f $label)
             }
+        }
 
-            if (Stop-SingleService $name) {
-                Write-Log ('  {0}: stopped' -f $name) 'Ok'
+        foreach ($name in $running) {
+            if ($pending -contains $name) {
+                Write-Log ('  {0}: still running, it will stay down after a reboot' -f $name) 'Warn'
             } else {
-                Write-Log ('  {0}: could not be stopped, it will stay down after a reboot' -f $name) 'Warn'
+                Write-Log ('  {0}: stopped' -f $name) 'Ok'
             }
         }
 
-        if ($round -eq 1) {
-            Start-Sleep -Seconds 1
+        if ($round -lt $Rounds) {
             Stop-UpdateProcesses
+            Start-Sleep -Seconds 1
         }
-        Start-Sleep -Seconds 1
     }
     Write-Log 'Some services are still running; they are disabled and will not start after a reboot' 'Warn'
 }
@@ -551,8 +549,9 @@ function Invoke-Disable {
     Set-StorePolicy $true
 
     Update-Bar 26 'Stopping services'
-    Stop-AllServices 2 26 34
+    # Abort any running scan first: a busy 'checking for updates' keeps wuauserv alive.
     Stop-UpdateProcesses
+    Stop-AllServices 2 26 34
     Start-Sleep -Seconds 1
 
     Update-Bar 30 'Disabling scheduled tasks'
