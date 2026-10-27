@@ -181,6 +181,33 @@ function Set-ServiceStartType([string]$Name, [string]$Mode) {
     return $false
 }
 
+# The tray badge means one of two things: updates were downloaded and are waiting, or a
+# restart is pending. Neither can install while the policy is in place, so drop both.
+function Clear-PendingUpdateState {
+    $rebootKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
+    try {
+        if (Test-Path $rebootKey) {
+            Remove-Item -Path $rebootKey -Recurse -Force -ErrorAction Stop
+            Write-Log '  pending restart flag cleared' 'Ok'
+        }
+    } catch {
+        Write-Log ('  could not clear the pending restart flag: ' + $_.Exception.Message) 'Warn'
+    }
+
+    $download = Join-Path $env:SystemRoot 'SoftwareDistribution\Download'
+    try {
+        if (Test-Path -LiteralPath $download) {
+            $bytes = (Get-ChildItem -LiteralPath $download -Recurse -Force -ErrorAction SilentlyContinue |
+                        Measure-Object -Property Length -Sum).Sum
+            Get-ChildItem -LiteralPath $download -Force -ErrorAction SilentlyContinue |
+                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Log ('  downloaded update payload removed ({0:N0} MB)' -f ([double]$bytes / 1MB)) 'Ok'
+        }
+    } catch {
+        Write-Log ('  could not clear downloaded updates: ' + $_.Exception.Message) 'Warn'
+    }
+}
+
 function Stop-AllServices([int]$Rounds = 2, [int]$FromPercent = -1, [int]$ToPercent = -1) {
     for ($round = 1; $round -le $Rounds; $round++) {
         $running = @()
@@ -552,16 +579,18 @@ function Invoke-Disable {
     # Abort any running scan first: a busy 'checking for updates' keeps wuauserv alive.
     Stop-UpdateProcesses
     Stop-AllServices 2 26 34
+    Update-Bar 34 'Clearing the update badge'
+    Clear-PendingUpdateState
     Start-Sleep -Seconds 1
 
-    Update-Bar 30 'Disabling scheduled tasks'
+    Update-Bar 36 'Disabling scheduled tasks'
     $tasks = @(Get-UpdateTasks)
     $succeeded = 0; $failed = 0; $edited = 0
     $index = 0
     foreach ($task in $tasks) {
         $index++
         if ($tasks.Count -gt 0) {
-            Update-Bar (30 + [int](25.0 * $index / $tasks.Count)) ("Disabling tasks {0}/{1}" -f $index, $tasks.Count)
+            Update-Bar (36 + [int](20.0 * $index / $tasks.Count)) ("Disabling tasks {0}/{1}" -f $index, $tasks.Count)
         }
         if ($task.Enabled -eq $false) { $succeeded++; continue }
 
