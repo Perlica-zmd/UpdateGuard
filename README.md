@@ -13,12 +13,15 @@ Ships in two forms: **a single PowerShell script (recommended)** and a **standal
 
 ## Download
 
-**Recommended: [`tools/Disable-WindowsUpdate.ps1`](tools/Disable-WindowsUpdate.ps1)** (~38 KB, plain text)
+**Recommended: the script build** — [`tools/Disable-WindowsUpdate.ps1`](tools/Disable-WindowsUpdate.ps1) (~38 KB, plain text)
 
-1. Open the link, click **Raw** and save the file
-2. Right-click the file → Properties → tick **Unblock**
-   (or run `Unblock-File .\Disable-WindowsUpdate.ps1`)
-3. Right-click → **Run with PowerShell** → accept the UAC prompt
+1. Download the repository (**Code → Download ZIP**) and extract it
+2. Double-click **`tools\Run.bat`** → accept the UAC prompt
+
+> Do not double-click the `.ps1` directly. A script extracted from a ZIP carries the
+> "came from the internet" mark, so Windows blocks it as unsigned unless the execution
+> policy is bypassed. `Run.bat` does exactly that for that one process and changes
+> nothing system-wide.
 
 The GUI build is attached to [Releases](../../releases) — it is not kept in the repository.
 
@@ -141,6 +144,7 @@ Double-click `UpdateGuard.exe` → click **Disable updates** → **click again t
 │  └─ AssemblyInfo.cs
 ├─ build/app.manifest        asInvoker + DPI awareness
 ├─ tools/
+│  ├─ Run.bat                    launcher (double-click this)
 │  ├─ Disable-WindowsUpdate.ps1  PowerShell build
 │  ├─ trust-cert.ps1             install the self-signed certificate machine-wide
 │  └─ trust-cert.bat             batch wrapper for the above

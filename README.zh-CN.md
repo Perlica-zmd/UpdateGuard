@@ -12,12 +12,13 @@
 
 ## 下载
 
-**推荐用脚本版：[`tools/Disable-WindowsUpdate.ps1`](tools/Disable-WindowsUpdate.ps1)**（约 38 KB，纯文本）
+**推荐用脚本版** —— [`tools/Disable-WindowsUpdate.ps1`](tools/Disable-WindowsUpdate.ps1)（约 38 KB，纯文本）
 
-1. 打开链接，点右上角 **Raw** 保存
-2. 右键文件 → 属性 → 勾选 **解除锁定**
-   （或执行 `Unblock-File .\Disable-WindowsUpdate.ps1`）
-3. 右键 → **使用 PowerShell 运行** → UAC 点"是"
+1. 下载整个仓库（**Code → Download ZIP**）并解压
+2. 双击 **`tools\Run.bat`** → UAC 点"是"
+
+> 不要直接双击 `.ps1`。从 ZIP 解压出来的脚本带有"来自 Internet"标记，Windows 会以
+> "未签名"为由拒绝执行。`Run.bat` 只在这一次进程里绕过执行策略，不改任何系统设置。
 
 GUI 版挂在 [Releases](../../releases)，仓库里不放二进制。
 
@@ -132,6 +133,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Disable-WindowsUpdat
 │  └─ AssemblyInfo.cs
 ├─ build/app.manifest        asInvoker + DPI 感知
 ├─ tools/
+│  ├─ Run.bat                     启动器（双击这个）
 │  ├─ Disable-WindowsUpdate.ps1  PowerShell 版
 │  ├─ trust-cert.ps1             把自签名证书装进本机受信任根
 │  └─ trust-cert.bat             上面那个的批处理入口
