@@ -500,37 +500,22 @@ function Restore-TaskFromBackup([string]$TaskPath, [string]$TaskName) {
 # Stop and start the Schedule service through sc.exe. Restart-Service waits on the
 # service state indefinitely, which is how the restore used to hang at 40%.
 function Restart-ScheduleService {
-    $null = Invoke-Process 'sc.exe' 'stop Schedule' 25000
-    Start-Sleep -Seconds 2
-    return ((Invoke-Process 'sc.exe' 'start Schedule' 25000) -eq 0)
+    $null = Invoke-Process 'sc.exe' 'stop Schedule' 8000
+    Start-Sleep -Seconds 1
+    return ((Invoke-Process 'sc.exe' 'start Schedule' 8000) -eq 0)
 }
 
 # Reload the Task Scheduler so the XML edits take effect immediately.
+# One attempt only: the SDDL dance below used to add another 50 s of waiting for a step
+# that is purely cosmetic - a reboot applies the same change.
 function Restart-TaskScheduler {
     if (Restart-ScheduleService) {
         Write-Log 'Task Scheduler reloaded' 'Ok'
         return $true
     }
 
-    # Administrators hold WRITE_DAC but not SERVICE_STOP, so grant it temporarily.
-    $original = ((& sc.exe sdshow Schedule 2>&1) -join '').Trim()
-    if ($original -notmatch [regex]::Escape($script:SddlNoStop)) {
-        Write-Log 'Unexpected SDDL on the Schedule service, leaving it untouched' 'Warn'
-        return $false
-    }
-
-    $patched = $original -replace [regex]::Escape($script:SddlNoStop), $script:SddlWithStop
-    $null = & sc.exe sdset Schedule $patched 2>&1
-
-    $succeeded = $false
-    try {
-        $succeeded = Restart-ScheduleService
-        if (-not $succeeded) { Write-Log 'Restart still failed after granting the right' 'Warn' }
-    } finally {
-        $null = & sc.exe sdset Schedule $original 2>&1
-        Write-Log 'Schedule service SDDL restored' 'Ok'
-    }
-    return $succeeded
+    Write-Log 'Could not reload the Task Scheduler now; the XML changes apply on the next reboot' 'Warn'
+    return $false
 }
 
 # ------------------------------------------------------------------ baseline
