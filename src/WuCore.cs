@@ -51,8 +51,10 @@ namespace LiquidWU
     /// </summary>
     public static class WuCore
     {
-        public static readonly string[] SvcCore = { "wuauserv", "usosvc", "dosvc", "WaaSMedicSvc", "bits" };
-        public static readonly string[] StopOrder = { "usosvc", "WaaSMedicSvc", "wuauserv", "dosvc", "bits" };
+        // dosvc (Delivery Optimization) is deliberately not managed: the SCM refuses to
+        // change its start type and it plays no part in policy blocking.
+        public static readonly string[] SvcCore = { "wuauserv", "usosvc", "WaaSMedicSvc", "bits" };
+        public static readonly string[] StopOrder = { "usosvc", "WaaSMedicSvc", "wuauserv", "bits" };
         public static readonly string[] ProcNames = { "MoUsoCoreWorker", "TiWorker", "wuauclt", "usoclient" };
 
         public static readonly string[] TaskFolders = {
@@ -78,6 +80,7 @@ namespace LiquidWU
             DefaultStart["WaaSMedicSvc"] = 3; DefaultDelayed["WaaSMedicSvc"] = 0;
             DefaultStart["usosvc"] = 2; DefaultDelayed["usosvc"] = 1;
             DefaultStart["dosvc"] = 2; DefaultDelayed["dosvc"] = 1;
+            // ..kept only so an older baseline file still parses; dosvc is not managed.
             DefaultStart["bits"] = 2; DefaultDelayed["bits"] = 1;
         }
 
@@ -259,10 +262,18 @@ namespace LiquidWU
                 psi.RedirectStandardError = true;
                 using (Process p = Process.Start(psi))
                 {
-                    string outp = p.StandardOutput.ReadToEnd();
-                    string errp = p.StandardError.ReadToEnd();
-                    p.WaitForExit(30000);
-                    return outp + errp;
+                    // Read asynchronously. Reading to the end first and only then waiting
+                    // deadlocks forever on a process that never exits (sc.exe on a busy SCM).
+                    System.Threading.Tasks.Task<string> outp = p.StandardOutput.ReadToEndAsync();
+                    System.Threading.Tasks.Task<string> errp = p.StandardError.ReadToEndAsync();
+                    if (!p.WaitForExit(30000))
+                    {
+                        try { p.Kill(); } catch { }
+                        return "";
+                    }
+                    string text = "";
+                    try { text = outp.Result + errp.Result; } catch { }
+                    return text;
                 }
             }
             catch { return ""; }
@@ -275,13 +286,15 @@ namespace LiquidWU
                 ProcessStartInfo psi = new ProcessStartInfo(exe, args);
                 psi.UseShellExecute = false;
                 psi.CreateNoWindow = true;
-                psi.RedirectStandardOutput = true;
-                psi.RedirectStandardError = true;
+                // No redirection here: nothing reads the output, and a full pipe buffer
+                // would block the child process instead.
                 using (Process p = Process.Start(psi))
                 {
-                    p.StandardOutput.ReadToEnd();
-                    p.StandardError.ReadToEnd();
-                    p.WaitForExit(60000);
+                    if (!p.WaitForExit(60000))
+                    {
+                        try { p.Kill(); } catch { }
+                        return -1;
+                    }
                     return p.ExitCode;
                 }
             }
@@ -291,6 +304,9 @@ namespace LiquidWU
         private static void TakeOwnership(string file)
         {
             RunCapture("takeown.exe", "/F \"" + file + "\" /A");
+            // Reset to inherited permissions: an older build left Deny-write ACEs on some
+            // task files, which made schtasks report success while failing to persist.
+            RunCapture("icacls.exe", "\"" + file + "\" /reset");
             RunCapture("icacls.exe", "\"" + file + "\" /grant \"*S-1-5-32-544:(F)\"");
         }
 
